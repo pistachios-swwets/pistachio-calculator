@@ -250,6 +250,99 @@
         setProfitPct(r.profitPct || 30); setLaborCost(r.laborCost || 0); setUnits(r.units || 1);
         setTab("calc");
       };
+
+      // ─── PDF export (print-based, Option D — full Arabic/RTL, no library) ───
+      const exportRecipePDF = (r) => {
+        const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+        // Recompute the breakdown from the saved inputs using the current materials/packaging.
+        const ings = (r.ingredients || []).map(ing => {
+          const m = materials.find(x => x.id === ing.mid);
+          const qty = parseFloat(ing.qty) || 0;
+          return { name: m ? m.name : "—", unit: m ? m.unit : "—", qty, cost: m ? m.costPerUnit * qty : 0 };
+        });
+        const pkgs = (r.packaging || []).map(sp => {
+          const p = packaging.find(x => x.id === sp.id);
+          const qty = parseFloat(sp.qty) || 0;
+          return { name: p ? p.name : "—", qty, cost: p ? p.cost * qty : 0 };
+        });
+        const matT = ings.reduce((s, x) => s + x.cost, 0);
+        const pkgT = pkgs.reduce((s, x) => s + x.cost, 0);
+        const lab = parseFloat(r.laborCost) || 0;
+        const tot = matT + pkgT + lab;
+        const un = Math.max(1, parseFloat(r.units) || 1);
+        const cpu = tot / un;
+        const pct = parseFloat(r.profitPct) || 0;
+        const prof = cpu * (pct / 100);
+        const sell = cpu + prof;
+        const exportedOn = new Date().toLocaleDateString("ar-BH");
+
+        const ingRows = ings.length
+          ? ings.map(x => `<tr><td>${esc(x.name)}</td><td class="c">${fmt(x.qty)}</td><td class="c">${esc(x.unit)}</td><td class="c">${fmt(x.cost)} BD</td></tr>`).join("")
+          : `<tr><td colspan="4" class="c muted">لا توجد مكونات</td></tr>`;
+        const pkgRows = pkgs.length
+          ? pkgs.map(x => `<tr><td>${esc(x.name)}</td><td class="c">${fmt(x.qty)}</td><td class="c">${fmt(x.cost)} BD</td></tr>`).join("")
+          : `<tr><td colspan="3" class="c muted">لا يوجد تغليف</td></tr>`;
+
+        const html =
+          '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">' +
+          '<title>' + esc(r.name) + ' — Pistachio Sweets</title>' +
+          '<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">' +
+          '<style>' +
+          '@page { size: A4; margin: 14mm; }' +
+          '* { box-sizing: border-box; }' +
+          "body { font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; direction: rtl; color: #2c2c2a; margin: 0; padding: 24px; }" +
+          '.brand { background: #4a7c2f; color: #fff; text-align: center; padding: 16px; border-radius: 10px; }' +
+          '.brand h1 { margin: 0; font-size: 20px; }' +
+          '.brand div { font-size: 12px; opacity: .9; margin-top: 4px; }' +
+          '.rname { font-size: 26px; font-weight: 700; color: #4a7c2f; margin: 18px 0 2px; }' +
+          '.rdate { font-size: 12px; color: #6b7280; margin-bottom: 18px; }' +
+          '.sec { font-size: 15px; font-weight: 700; color: #4a7c2f; border-bottom: 2px solid #e8f0e2; padding-bottom: 4px; margin: 18px 0 8px; }' +
+          'table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; }' +
+          'th, td { border: 1px solid #d7d7d2; padding: 7px 10px; text-align: right; }' +
+          'th { background: #e8f0e2; color: #2c2c2a; font-weight: 600; }' +
+          'td.c { text-align: center; }' +
+          '.muted { color: #6b7280; }' +
+          '.bd { width: 60%; margin-inline-start: auto; }' +
+          '.bd td { border: none; border-bottom: 1px solid #eee; padding: 6px 4px; }' +
+          '.bd td:last-child { text-align: left; font-weight: 600; }' +
+          '.bd tr.total td { border-top: 2px solid #c4842d; color: #c4842d; font-weight: 700; }' +
+          '.bd tr.sell td { font-size: 18px; color: #4a7c2f; font-weight: 700; border-bottom: none; padding-top: 10px; }' +
+          '.foot { margin-top: 28px; border-top: 1px solid #e2e0db; padding-top: 10px; font-size: 11px; color: #6b7280; display: flex; justify-content: space-between; }' +
+          '@media print { body { padding: 0; } }' +
+          '</style></head><body>' +
+          '<div class="brand"><h1>حاسبة تكلفة المنتج</h1><div>Pistachio Sweets — Product Cost Calculator</div></div>' +
+          '<div class="rname">' + esc(r.name) + '</div>' +
+          '<div class="rdate">تاريخ الحفظ: ' + esc(r.savedAt || "—") + '</div>' +
+          '<div class="sec">المكونات</div>' +
+          '<table><thead><tr><th>المادة</th><th class="c">الكمية</th><th class="c">الوحدة</th><th class="c">التكلفة</th></tr></thead><tbody>' + ingRows + '</tbody></table>' +
+          '<div class="sec">التغليف</div>' +
+          '<table><thead><tr><th>التغليف</th><th class="c">الكمية</th><th class="c">التكلفة</th></tr></thead><tbody>' + pkgRows + '</tbody></table>' +
+          '<div class="sec">ملخص التكلفة</div>' +
+          '<table class="bd"><tbody>' +
+          '<tr><td>تكلفة المواد الخام</td><td>' + fmt(matT) + ' BD</td></tr>' +
+          '<tr><td>تكلفة التغليف</td><td>' + fmt(pkgT) + ' BD</td></tr>' +
+          '<tr><td>تكلفة العمالة</td><td>' + fmt(lab) + ' BD</td></tr>' +
+          '<tr class="total"><td>إجمالي التكلفة</td><td>' + fmt(tot) + ' BD</td></tr>' +
+          '<tr><td>عدد الوحدات</td><td>' + un + '</td></tr>' +
+          '<tr><td>تكلفة الوحدة</td><td>' + fmt(cpu) + ' BD</td></tr>' +
+          '<tr><td>نسبة الربح</td><td>' + fmtPct(pct) + '</td></tr>' +
+          '<tr><td>الربح</td><td>' + fmt(prof) + ' BD</td></tr>' +
+          '<tr class="sell"><td>سعر البيع</td><td>' + fmt(sell) + ' BD</td></tr>' +
+          '</tbody></table>' +
+          '<div class="foot"><span>Pistachio Sweets</span><span>تاريخ التصدير: ' + esc(exportedOn) + '</span></div>' +
+          '</body></html>';
+
+        const w = window.open("", "_blank");
+        if (!w) { return; }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        // Give the font/layout a moment, then open the print dialog (Save as PDF).
+        w.onafterprint = () => { try { w.close(); } catch (e) {} };
+        setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
+      };
+
       const logout = () => {
         try { window.sessionStorage.removeItem(AUTH_KEY); } catch (x) {}
         window.location.reload();
@@ -504,6 +597,7 @@
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                      <button style={sBtn("ghost")} onClick={() => exportRecipePDF(r)}>📄 PDF</button>
                       <button style={sBtn("ghost")} onClick={() => loadRecipe(r)}>📂 تحميل</button>
                       <button style={sBtn("del")} onClick={() => requestDelete("recipe", r.id, r.name)}>حذف</button>
                     </div>
