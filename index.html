@@ -180,6 +180,9 @@
       const [pkgName, setPkgName] = useState("");
       const [pkgCost, setPkgCost] = useState("");
 
+      // Delete confirmation modal: { type: 'material'|'packaging'|'recipe', id, name, password, error }
+      const [deleteConfirm, setDeleteConfirm] = useState(null);
+
       useEffect(() => {
         (async () => {
           const m = await load("costcalc_materials", INIT_MATERIALS);
@@ -250,6 +253,21 @@
       const logout = () => {
         try { window.sessionStorage.removeItem(AUTH_KEY); } catch (x) {}
         window.location.reload();
+      };
+
+      // ─── Password-gated deletes (materials, packaging, recipes) ───
+      const requestDelete = (type, id, name) => setDeleteConfirm({ type, id, name: name || "", password: "", error: "" });
+      const confirmDelete = () => {
+        if (!deleteConfirm) return;
+        if (deleteConfirm.password !== PASSWORD) {
+          setDeleteConfirm(dc => ({ ...dc, error: "كلمة المرور غير صحيحة" }));
+          return;
+        }
+        const { type, id } = deleteConfirm;
+        if (type === "material") setMaterials(p => p.filter(x => x.id !== id));
+        else if (type === "packaging") setPackaging(p => p.filter(x => x.id !== id));
+        else if (type === "recipe") setRecipes(p => p.filter(x => x.id !== id));
+        setDeleteConfirm(null);
       };
 
       // ─── Styles ───
@@ -327,7 +345,7 @@
                           <td style={{ padding: "9px 12px" }}>{m.name}</td>
                           <td style={{ padding: "9px 12px", textAlign: "center" }}>{m.unit}</td>
                           <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(m.costPerUnit)} BD</td>
-                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => setMaterials(p => p.filter(x => x.id !== m.id))}>✕</button></td>
+                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => requestDelete("material", m.id, m.name)}>✕</button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -359,7 +377,7 @@
                         <tr key={p.id} style={{ borderBottom: `1px solid ${C.brd}` }}>
                           <td style={{ padding: "9px 12px" }}>{p.name}</td>
                           <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(p.cost)} BD</td>
-                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => setPackaging(pr => pr.filter(x => x.id !== p.id))}>✕</button></td>
+                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => requestDelete("packaging", p.id, p.name)}>✕</button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -487,13 +505,47 @@
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
                       <button style={sBtn("ghost")} onClick={() => loadRecipe(r)}>📂 تحميل</button>
-                      <button style={sBtn("del")} onClick={() => setRecipes(p => p.filter(x => x.id !== r.id))}>حذف</button>
+                      <button style={sBtn("del")} onClick={() => requestDelete("recipe", r.id, r.name)}>حذف</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* ═══ Delete confirmation modal (password-gated) ═══ */}
+          {deleteConfirm && (
+            <div onClick={() => setDeleteConfirm(null)}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex",
+                alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20, direction: "rtl" }}>
+              <div onClick={e => e.stopPropagation()} className="cc-modal-card"
+                style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 360,
+                  padding: "26px 24px", boxShadow: "0 10px 40px rgba(0,0,0,0.25)", textAlign: "center" }}>
+                <div style={{ fontSize: 19, fontWeight: 700, color: C.danger, marginBottom: 6 }}>تأكيد الحذف</div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 4 }}>أدخل كلمة المرور لتأكيد الحذف</div>
+                {deleteConfirm.name && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>"{deleteConfirm.name}"</div>}
+                <input type="password" autoFocus placeholder="كلمة المرور" value={deleteConfirm.password}
+                  onChange={e => setDeleteConfirm(dc => ({ ...dc, password: e.target.value, error: "" }))}
+                  onKeyDown={e => { if (e.key === "Enter") confirmDelete(); }}
+                  style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.brd}`, borderRadius: 10,
+                    fontSize: 15, textAlign: "center", direction: "rtl", boxSizing: "border-box",
+                    fontFamily: "inherit", minHeight: 48, marginBottom: 6 }} />
+                <div style={{ color: C.danger, fontSize: 13, minHeight: 18, marginBottom: 10 }}>{deleteConfirm.error}</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={confirmDelete}
+                    style={{ flex: 1, padding: 12, border: "none", borderRadius: 10, background: C.danger,
+                      color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 48, fontFamily: "inherit" }}>
+                    حذف
+                  </button>
+                  <button onClick={() => setDeleteConfirm(null)}
+                    style={{ flex: 1, padding: 12, border: `1px solid ${C.brd}`, borderRadius: 10, background: "#f3f4f6",
+                      color: C.txt, fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 48, fontFamily: "inherit" }}>
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
