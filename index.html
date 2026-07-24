@@ -68,12 +68,8 @@
   <script type="text/babel" data-presets="react">
     const { useState, useEffect } = React;
 
-    // ─── Persistent storage: window.storage → localStorage → in-memory ───
+    // ─── Persistent storage: localStorage → in-memory fallback ───
     const memStore = {};
-    const hasWindowStorage = (() => {
-      try { return !!(window.storage && typeof window.storage.get === "function" && typeof window.storage.set === "function"); }
-      catch (e) { return false; }
-    })();
     const hasLocalStorage = (() => {
       try { const k = "__cc_test__"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k); return true; }
       catch (e) { return false; }
@@ -81,10 +77,6 @@
 
     async function load(key, fallback) {
       try {
-        if (hasWindowStorage) {
-          const r = await window.storage.get(key);
-          return (r && r.value) ? JSON.parse(r.value) : fallback;
-        }
         if (hasLocalStorage) {
           const v = window.localStorage.getItem(key);
           return v ? JSON.parse(v) : fallback;
@@ -95,7 +87,6 @@
     async function save(key, data) {
       const val = JSON.stringify(data);
       try {
-        if (hasWindowStorage) { await window.storage.set(key, val); return; }
         if (hasLocalStorage) { window.localStorage.setItem(key, val); return; }
         memStore[key] = val;
       } catch (e) { memStore[key] = val; }
