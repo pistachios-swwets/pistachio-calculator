@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>حاسبة تكلفة المنتج — Pistachio Sweets</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: 'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif; background: #f7f5f0; }
+    /* Touch-friendly minimum hit targets */
+    button, .cc-touch { min-height: 44px; }
+    input, select { min-height: 44px; }
+    /* Horizontal scroll safety for tables on small screens */
+    .cc-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .cc-table-wrap table { min-width: 340px; }
+
+    @media (max-width: 600px) {
+      /* Stack all grids to a single column */
+      .cc-grid { grid-template-columns: 1fr !important; }
+      .cc-wrap { padding: 12px 10px 48px !important; }
+      .cc-head h1 { font-size: 20px !important; }
+      .cc-card { padding: 12px !important; }
+      .cc-tab { padding: 9px 12px !important; font-size: 12px !important; }
+      /* Keep tiny inline number inputs compact (qty boxes) */
+      .cc-qtybox { min-height: 34px !important; }
+      /* Results price */
+      .cc-sell { font-size: 16px !important; }
+    }
+
+    /* Login screen */
+    .cc-login-bg {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f7f5f0 0%, #e8f0e2 100%); padding: 20px;
+    }
+    .cc-login-card {
+      width: 100%; max-width: 360px; background: #fff; border-radius: 14px;
+      border: 1px solid #e2e0db; box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+      padding: 32px 26px; text-align: center;
+    }
+    .cc-login-card h1 { font-size: 22px; font-weight: 700; color: #4a7c2f; margin: 0 0 4px; }
+    .cc-login-sub { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
+    .cc-login-input {
+      width: 100%; padding: 12px 14px; border: 1px solid #e2e0db; border-radius: 10px;
+      font-size: 15px; text-align: center; direction: rtl; margin-bottom: 12px;
+      font-family: inherit; min-height: 48px;
+    }
+    .cc-login-input:focus { outline: none; border-color: #4a7c2f; box-shadow: 0 0 0 3px rgba(74,124,47,0.12); }
+    .cc-login-btn {
+      width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4a7c2f;
+      color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; min-height: 48px;
+      font-family: inherit; transition: background 0.15s;
+    }
+    .cc-login-btn:hover { background: #3a6324; }
+    .cc-login-err { color: #dc2626; font-size: 13px; margin-top: 12px; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect } = React;
+
+    // ─── Persistent storage: window.storage → localStorage → in-memory ───
+    const memStore = {};
+    const hasWindowStorage = (() => {
+      try { return !!(window.storage && typeof window.storage.get === "function" && typeof window.storage.set === "function"); }
+      catch (e) { return false; }
+    })();
+    const hasLocalStorage = (() => {
+      try { const k = "__cc_test__"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k); return true; }
+      catch (e) { return false; }
+    })();
+
+    async function load(key, fallback) {
+      try {
+        if (hasWindowStorage) {
+          const r = await window.storage.get(key);
+          return (r && r.value) ? JSON.parse(r.value) : fallback;
+        }
+        if (hasLocalStorage) {
+          const v = window.localStorage.getItem(key);
+          return v ? JSON.parse(v) : fallback;
+        }
+        return (key in memStore) ? JSON.parse(memStore[key]) : fallback;
+      } catch (e) { return fallback; }
+    }
+    async function save(key, data) {
+      const val = JSON.stringify(data);
+      try {
+        if (hasWindowStorage) { await window.storage.set(key, val); return; }
+        if (hasLocalStorage) { window.localStorage.setItem(key, val); return; }
+        memStore[key] = val;
+      } catch (e) { memStore[key] = val; }
+    }
+
+    // ─── Formatting helpers ───
+    const fmt = (n) => { const v = parseFloat(n); return isNaN(v) ? "0.000" : v.toFixed(3); };
+    const fmtPct = (n) => { const v = parseFloat(n); return isNaN(v) ? "0%" : v.toFixed(1) + "%"; };
+    const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+    const INIT_MATERIALS = [
+      { id: "m1", name: "حليب طازج", unit: "لتر", costPerUnit: 0.45 },
+      { id: "m2", name: "حبوب الكفير", unit: "غرام", costPerUnit: 0.015 },
+      { id: "m3", name: "سكر", unit: "غرام", costPerUnit: 0.001 },
+      { id: "m4", name: "فانيلا", unit: "مل", costPerUnit: 0.008 },
+    ];
+    const INIT_PACKAGING = [
+      { id: "p1", name: "عبوة 200 مل", cost: 0.025 },
+      { id: "p2", name: "عبوة 250 مل", cost: 0.03 },
+      { id: "p3", name: "عبوة 500 مل", cost: 0.04 },
+      { id: "p4", name: "عبوة 1 لتر", cost: 0.06 },
+      { id: "p5", name: "ملصق", cost: 0.01 },
+    ];
+
+    const C = {
+      bg: "#f7f5f0", card: "#ffffff", pri: "#4a7c2f", priDk: "#3a6324", priLt: "#e8f0e2",
+      acc: "#c4842d", accLt: "#fdf4e7", txt: "#2c2c2a", muted: "#6b7280",
+      brd: "#e2e0db", danger: "#dc2626",
+    };
+
+    // ─── Login screen ───
+    const PASSWORD = "atyat";
+    const AUTH_KEY = "costcalc_auth";
+
+    function Login({ onSuccess }) {
+      const [pw, setPw] = useState("");
+      const [err, setErr] = useState("");
+
+      const submit = (e) => {
+        if (e) e.preventDefault();
+        if (pw === PASSWORD) {
+          try { window.sessionStorage.setItem(AUTH_KEY, "true"); } catch (x) {}
+          onSuccess();
+        } else {
+          setErr("كلمة المرور غير صحيحة");
+        }
+      };
+
+      return (
+        <div className="cc-login-bg">
+          <form className="cc-login-card" onSubmit={submit}>
+            <h1>حاسبة تكلفة المنتج</h1>
+            <div className="cc-login-sub">Pistachio Sweets</div>
+            <input
+              className="cc-login-input"
+              type="password"
+              placeholder="كلمة المرور"
+              value={pw}
+              autoFocus
+              onChange={(e) => { setPw(e.target.value); if (err) setErr(""); }}
+            />
+            <button className="cc-login-btn" type="submit">دخول</button>
+            <div className="cc-login-err">{err}</div>
+          </form>
+        </div>
+      );
+    }
+
+    // ─── Calculator app ───
+    function App() {
+      const [tab, setTab] = useState("calc");
+      const [materials, setMaterials] = useState(null);
+      const [packaging, setPackaging] = useState(null);
+      const [recipes, setRecipes] = useState(null);
+      const [ready, setReady] = useState(false);
+
+      // Calculator state
+      const [recipeName, setRecipeName] = useState("");
+      const [ingredients, setIngredients] = useState([]);
+      const [selPkg, setSelPkg] = useState([]);
+      const [profitPct, setProfitPct] = useState(30);
+      const [laborCost, setLaborCost] = useState(0);
+      const [units, setUnits] = useState(1);
+
+      // Add material form
+      const [matName, setMatName] = useState("");
+      const [matUnit, setMatUnit] = useState("");
+      const [matCost, setMatCost] = useState("");
+
+      // Add packaging form
+      const [pkgName, setPkgName] = useState("");
+      const [pkgCost, setPkgCost] = useState("");
+
+      useEffect(() => {
+        (async () => {
+          const m = await load("costcalc_materials", INIT_MATERIALS);
+          const p = await load("costcalc_packaging", INIT_PACKAGING);
+          const r = await load("costcalc_recipes", []);
+          setMaterials(m); setPackaging(p); setRecipes(r); setReady(true);
+        })();
+      }, []);
+
+      useEffect(() => { if (ready && materials) save("costcalc_materials", materials); }, [materials, ready]);
+      useEffect(() => { if (ready && packaging) save("costcalc_packaging", packaging); }, [packaging, ready]);
+      useEffect(() => { if (ready && recipes) save("costcalc_recipes", recipes); }, [recipes, ready]);
+
+      if (!ready || !materials || !packaging || !recipes) {
+        return <div style={{ fontFamily: "system-ui", padding: 40, textAlign: "center", color: C.muted, direction: "rtl" }}>جاري التحميل...</div>;
+      }
+
+      // ─── Calculations ───
+      const matTotal = ingredients.reduce((s, ing) => {
+        const m = materials.find(x => x.id === ing.mid);
+        return s + (m ? m.costPerUnit * (parseFloat(ing.qty) || 0) : 0);
+      }, 0);
+      const pkgTotal = selPkg.reduce((s, sp) => {
+        const p = packaging.find(x => x.id === sp.id);
+        return s + (p ? p.cost * (parseFloat(sp.qty) || 0) : 0);
+      }, 0);
+      const labor = parseFloat(laborCost) || 0;
+      const totalCost = matTotal + pkgTotal + labor;
+      const u = Math.max(1, parseFloat(units) || 1);
+      const costPerUnit = totalCost / u;
+      const pPct = parseFloat(profitPct) || 0;
+      const profitAmt = costPerUnit * (pPct / 100);
+      const sellPrice = costPerUnit + profitAmt;
+
+      // ─── Actions ───
+      const addMaterial = () => {
+        if (!matName.trim()) return;
+        setMaterials(prev => [...prev, { id: uid(), name: matName.trim(), unit: matUnit.trim() || "وحدة", costPerUnit: parseFloat(matCost) || 0 }]);
+        setMatName(""); setMatUnit(""); setMatCost("");
+      };
+      const addPkg = () => {
+        if (!pkgName.trim()) return;
+        setPackaging(prev => [...prev, { id: uid(), name: pkgName.trim(), cost: parseFloat(pkgCost) || 0 }]);
+        setPkgName(""); setPkgCost("");
+      };
+      const addIngredient = () => {
+        if (materials.length === 0) return;
+        setIngredients(prev => [...prev, { mid: materials[0].id, qty: 0 }]);
+      };
+      const togglePkg = (pid) => {
+        setSelPkg(prev => prev.find(x => x.id === pid) ? prev.filter(x => x.id !== pid) : [...prev, { id: pid, qty: 1 }]);
+      };
+      const saveRecipe = () => {
+        if (!recipeName.trim()) return;
+        const r = {
+          id: uid(), name: recipeName.trim(), ingredients: [...ingredients], packaging: [...selPkg],
+          profitPct: pPct, laborCost: labor, units: u,
+          savedAt: new Date().toLocaleDateString("ar-BH"),
+          totalCost, costPerUnit, sellPrice,
+        };
+        setRecipes(prev => [...prev, r]);
+      };
+      const loadRecipe = (r) => {
+        setRecipeName(r.name); setIngredients(r.ingredients || []); setSelPkg(r.packaging || []);
+        setProfitPct(r.profitPct || 30); setLaborCost(r.laborCost || 0); setUnits(r.units || 1);
+        setTab("calc");
+      };
+      const logout = () => {
+        try { window.sessionStorage.removeItem(AUTH_KEY); } catch (x) {}
+        window.location.reload();
+      };
+
+      // ─── Styles ───
+      const sPage = { fontFamily: "'IBM Plex Sans Arabic', system-ui, sans-serif", background: C.bg, minHeight: "100vh", color: C.txt, direction: "rtl" };
+      const sWrap = { maxWidth: 880, margin: "0 auto", padding: "16px 14px 60px" };
+      const sHead = { textAlign: "center", padding: "22px 0 16px", borderBottom: `2px solid ${C.pri}`, marginBottom: 18, position: "relative" };
+      const sCard = { background: C.card, borderRadius: 10, border: `1px solid ${C.brd}`, padding: 16, marginBottom: 12 };
+      const sInput = { width: "100%", padding: "8px 10px", border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 14, boxSizing: "border-box", direction: "rtl", fontFamily: "inherit" };
+      const sInputSm = { ...sInput, textAlign: "center", width: "100%", padding: "6px 8px", fontSize: 13 };
+      const sLabel = { fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 3, display: "block" };
+      const sBtn = (v) => ({
+        padding: "8px 16px", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+        ...(v === "pri" ? { background: C.pri, color: "#fff" } :
+           v === "acc" ? { background: C.acc, color: "#fff" } :
+           v === "del" ? { background: "none", color: C.danger, border: `1px solid ${C.danger}`, padding: "6px 12px" } :
+           { background: C.priLt, color: C.pri }),
+      });
+      const sTab = (a) => ({
+        padding: "9px 16px", fontSize: 13, fontWeight: a ? 700 : 500, color: a ? C.pri : C.muted,
+        background: a ? C.priLt : "transparent", border: "none",
+        borderBottom: a ? `3px solid ${C.pri}` : "3px solid transparent", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
+      });
+      const sRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.brd}`, fontSize: 14 };
+      const sGrid = (n) => ({ display: "grid", gridTemplateColumns: `repeat(${n}, 1fr)`, gap: 8 });
+      const sDelBtn = { background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 15, padding: "4px 8px" };
+
+      const tabs = [
+        { k: "calc", l: "⚙️ حاسبة التكلفة" },
+        { k: "mat", l: "🧪 المواد الخام" },
+        { k: "pkg", l: "📦 التغليف" },
+        { k: "rec", l: `📋 الوصفات (${recipes.length})` },
+      ];
+
+      return (
+        <div style={sPage}>
+          <div style={sWrap} className="cc-wrap">
+            {/* Header */}
+            <div style={sHead} className="cc-head">
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: C.pri, margin: 0 }}>حاسبة تكلفة المنتج</h1>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>Pistachio Sweets — Product Cost Calculator</div>
+              <button onClick={logout} title="تسجيل الخروج"
+                style={{ position: "absolute", top: 10, left: 0, background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer", minHeight: "auto" }}>
+                خروج ⏻
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", borderBottom: `2px solid ${C.brd}`, marginBottom: 16, overflowX: "auto" }}>
+              {tabs.map(t => <button key={t.k} className="cc-tab" style={sTab(tab === t.k)} onClick={() => setTab(t.k)}>{t.l}</button>)}
+            </div>
+
+            {/* ═══ Materials Tab ═══ */}
+            {tab === "mat" && (
+              <div>
+                <div style={sCard} className="cc-card">
+                  <div style={{ fontWeight: 600, marginBottom: 10 }}>إضافة مادة خام</div>
+                  <div style={sGrid(3)} className="cc-grid">
+                    <div><label style={sLabel}>الاسم</label><input style={sInput} value={matName} onChange={e => setMatName(e.target.value)} placeholder="حليب" /></div>
+                    <div><label style={sLabel}>الوحدة</label><input style={sInput} value={matUnit} onChange={e => setMatUnit(e.target.value)} placeholder="لتر / غرام" /></div>
+                    <div><label style={sLabel}>التكلفة (BD)</label><input style={sInput} type="number" step="0.001" value={matCost} onChange={e => setMatCost(e.target.value)} placeholder="0.000" /></div>
+                  </div>
+                  <div style={{ marginTop: 10, textAlign: "left" }}><button style={sBtn("pri")} onClick={addMaterial}>+ إضافة</button></div>
+                </div>
+                {materials.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.muted }}>لا توجد مواد خام</div> : (
+                  <div style={{ ...sCard, padding: 0 }} className="cc-table-wrap">
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead><tr style={{ background: C.priLt }}>
+                        <th style={{ padding: "9px 12px", textAlign: "right" }}>المادة</th>
+                        <th style={{ padding: "9px 12px", textAlign: "center" }}>الوحدة</th>
+                        <th style={{ padding: "9px 12px", textAlign: "center" }}>التكلفة</th>
+                        <th style={{ width: 40 }}></th>
+                      </tr></thead>
+                      <tbody>{materials.map(m => (
+                        <tr key={m.id} style={{ borderBottom: `1px solid ${C.brd}` }}>
+                          <td style={{ padding: "9px 12px" }}>{m.name}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "center" }}>{m.unit}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(m.costPerUnit)} BD</td>
+                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => setMaterials(p => p.filter(x => x.id !== m.id))}>✕</button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ═══ Packaging Tab ═══ */}
+            {tab === "pkg" && (
+              <div>
+                <div style={sCard} className="cc-card">
+                  <div style={{ fontWeight: 600, marginBottom: 10 }}>إضافة مادة تغليف</div>
+                  <div style={sGrid(2)} className="cc-grid">
+                    <div><label style={sLabel}>الاسم</label><input style={sInput} value={pkgName} onChange={e => setPkgName(e.target.value)} placeholder="عبوة 500 مل" /></div>
+                    <div><label style={sLabel}>التكلفة (BD)</label><input style={sInput} type="number" step="0.001" value={pkgCost} onChange={e => setPkgCost(e.target.value)} placeholder="0.000" /></div>
+                  </div>
+                  <div style={{ marginTop: 10, textAlign: "left" }}><button style={sBtn("pri")} onClick={addPkg}>+ إضافة</button></div>
+                </div>
+                {packaging.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.muted }}>لا توجد مواد تغليف</div> : (
+                  <div style={{ ...sCard, padding: 0 }} className="cc-table-wrap">
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead><tr style={{ background: C.accLt }}>
+                        <th style={{ padding: "9px 12px", textAlign: "right" }}>التغليف</th>
+                        <th style={{ padding: "9px 12px", textAlign: "center" }}>التكلفة</th>
+                        <th style={{ width: 40 }}></th>
+                      </tr></thead>
+                      <tbody>{packaging.map(p => (
+                        <tr key={p.id} style={{ borderBottom: `1px solid ${C.brd}` }}>
+                          <td style={{ padding: "9px 12px" }}>{p.name}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(p.cost)} BD</td>
+                          <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => setPackaging(pr => pr.filter(x => x.id !== p.id))}>✕</button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ═══ Calculator Tab ═══ */}
+            {tab === "calc" && (
+              <div>
+                {/* Recipe name */}
+                <div style={sCard} className="cc-card">
+                  <label style={sLabel}>اسم المنتج / الوصفة</label>
+                  <input style={sInput} value={recipeName} onChange={e => setRecipeName(e.target.value)} placeholder="مثال: كفير حليب 500 مل" />
+                </div>
+
+                {/* Ingredients */}
+                <div style={sCard} className="cc-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <span style={{ fontWeight: 600 }}>المكونات</span>
+                    <button style={sBtn("ghost")} onClick={addIngredient}>+ مكون</button>
+                  </div>
+                  {ingredients.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 16, color: C.muted, fontSize: 13 }}>اضغط "+ مكون" لإضافة المواد الخام</div>
+                  ) : ingredients.map((ing, i) => {
+                    const m = materials.find(x => x.id === ing.mid);
+                    const cost = m ? m.costPerUnit * (parseFloat(ing.qty) || 0) : 0;
+                    return (
+                      <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                        <div style={{ flex: "2 1 100px" }}>
+                          <select style={{ ...sInput, padding: "7px 8px" }} value={ing.mid}
+                            onChange={e => setIngredients(p => p.map((x, j) => j === i ? { ...x, mid: e.target.value } : x))}>
+                            {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>)}
+                          </select>
+                        </div>
+                        <div style={{ flex: "1 1 60px" }}>
+                          <input style={sInputSm} type="number" step="0.1" value={ing.qty || ""} placeholder="الكمية"
+                            onChange={e => setIngredients(p => p.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
+                        </div>
+                        <div style={{ flex: "0 0 70px", textAlign: "center", fontSize: 12, color: C.muted }}>{fmt(cost)} BD</div>
+                        <button style={sDelBtn} onClick={() => setIngredients(p => p.filter((_, j) => j !== i))}>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Packaging */}
+                <div style={sCard} className="cc-card">
+                  <div style={{ fontWeight: 600, marginBottom: 10 }}>التغليف</div>
+                  {packaging.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 12, color: C.muted, fontSize: 13 }}>أضف مواد تغليف من تبويب "التغليف"</div>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {packaging.map(pk => {
+                        const sel = selPkg.find(x => x.id === pk.id);
+                        return (
+                          <div key={pk.id} onClick={() => togglePkg(pk.id)} className="cc-touch" style={{
+                            border: `1.5px solid ${sel ? C.pri : C.brd}`, borderRadius: 10, padding: "7px 12px",
+                            cursor: "pointer", background: sel ? C.priLt : "#fff",
+                            display: "flex", alignItems: "center", gap: 8, transition: "all 0.15s",
+                          }}>
+                            <span style={{ fontSize: 13, fontWeight: sel ? 600 : 400 }}>{pk.name}</span>
+                            <span style={{ fontSize: 11, color: C.muted }}>{fmt(pk.cost)}</span>
+                            {sel && <input className="cc-qtybox" style={{ ...sInputSm, width: 44, padding: "3px" }} type="number" min="1"
+                              value={sel.qty} onClick={e => e.stopPropagation()}
+                              onChange={e => setSelPkg(p => p.map(x => x.id === pk.id ? { ...x, qty: parseFloat(e.target.value) || 0 } : x))} />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Labor / Units / Profit */}
+                <div style={sCard} className="cc-card">
+                  <div style={sGrid(3)} className="cc-grid">
+                    <div><label style={sLabel}>تكلفة العمالة (BD)</label><input style={sInput} type="number" step="0.01" value={laborCost || ""} onChange={e => setLaborCost(e.target.value)} /></div>
+                    <div><label style={sLabel}>عدد الوحدات</label><input style={sInput} type="number" min="1" value={units} onChange={e => setUnits(e.target.value)} /></div>
+                    <div><label style={sLabel}>نسبة الربح %</label><input style={sInput} type="number" step="1" value={profitPct} onChange={e => setProfitPct(e.target.value)} /></div>
+                  </div>
+                </div>
+
+                {/* Results */}
+                <div style={{ background: C.priLt, borderRadius: 10, padding: 16, border: `1.5px solid ${C.pri}`, marginBottom: 12 }} className="cc-card">
+                  <div style={{ fontWeight: 700, color: C.pri, marginBottom: 8 }}>النتيجة</div>
+                  <div style={sRow}><span>تكلفة المواد الخام</span><span style={{ fontWeight: 600 }}>{fmt(matTotal)} BD</span></div>
+                  <div style={sRow}><span>تكلفة التغليف</span><span style={{ fontWeight: 600 }}>{fmt(pkgTotal)} BD</span></div>
+                  {labor > 0 && <div style={sRow}><span>تكلفة العمالة</span><span style={{ fontWeight: 600 }}>{fmt(labor)} BD</span></div>}
+                  <div style={{ ...sRow, fontWeight: 600, color: C.acc }}><span>إجمالي التكلفة</span><span>{fmt(totalCost)} BD</span></div>
+                  {u > 1 && <div style={sRow}><span>تكلفة الوحدة ({u})</span><span style={{ fontWeight: 600 }}>{fmt(costPerUnit)} BD</span></div>}
+                  <div style={sRow}><span>الربح ({fmtPct(pPct)})</span><span style={{ fontWeight: 600, color: C.pri }}>{fmt(profitAmt)} BD</span></div>
+                  <div className="cc-sell" style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 2px", fontSize: 18, fontWeight: 700, color: C.pri }}>
+                    <span>سعر البيع</span><span>{fmt(sellPrice)} BD</span>
+                  </div>
+                </div>
+
+                {/* Save */}
+                <div style={{ textAlign: "center" }}>
+                  <button style={{ ...sBtn("acc"), opacity: recipeName.trim() ? 1 : 0.5 }} disabled={!recipeName.trim()} onClick={saveRecipe}>
+                    💾 حفظ الوصفة
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Recipes Tab ═══ */}
+            {tab === "rec" && (
+              <div>
+                {recipes.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 40, color: C.muted }}>لا توجد وصفات محفوظة</div>
+                ) : recipes.map(r => (
+                  <div key={r.id} style={{ ...sCard, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }} className="cc-card">
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3 }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>حُفظت: {r.savedAt}</div>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
+                        <span><span style={{ color: C.muted }}>التكلفة: </span><b>{fmt(r.totalCost)} BD</b></span>
+                        <span><span style={{ color: C.muted }}>الوحدة: </span><b>{fmt(r.costPerUnit)} BD</b></span>
+                        <span><span style={{ color: C.muted }}>البيع: </span><b style={{ color: C.pri }}>{fmt(r.sellPrice)} BD</b></span>
+                        <span style={{ background: C.accLt, color: C.acc, padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
+                          ربح {fmtPct(r.profitPct)}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                      <button style={sBtn("ghost")} onClick={() => loadRecipe(r)}>📂 تحميل</button>
+                      <button style={sBtn("del")} onClick={() => setRecipes(p => p.filter(x => x.id !== r.id))}>حذف</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Root: password gate ───
+    function Root() {
+      const [authed, setAuthed] = useState(() => {
+        try { return window.sessionStorage.getItem(AUTH_KEY) === "true"; } catch (e) { return false; }
+      });
+      if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
+      return <App />;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+  </script>
+</body>
+</html>
