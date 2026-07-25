@@ -1,0 +1,17 @@
+{
+  "materials": [
+    { "id": "m1", "name": "حليب طازج", "unit": "لتر", "costPerUnit": 0.45 },
+    { "id": "m2", "name": "حبوب الكفير", "unit": "غرام", "costPerUnit": 0.015 },
+    { "id": "m3", "name": "سكر", "unit": "غرام", "costPerUnit": 0.001 },
+    { "id": "m4", "name": "فانيلا", "unit": "مل", "costPerUnit": 0.008 }
+  ],
+  "packaging": [
+    { "id": "p1", "name": "عبوة 200 مل", "cost": 0.025 },
+    { "id": "p2", "name": "عبوة 250 مل", "cost": 0.03 },
+    { "id": "p3", "name": "عبوة 500 مل", "cost": 0.04 },
+    { "id": "p4", "name": "عبوة 1 لتر", "cost": 0.06 },
+    { "id": "p5", "name": "ملصق", "cost": 0.01 }
+  ],
+  "recipes": [],
+  "sales": []
+}

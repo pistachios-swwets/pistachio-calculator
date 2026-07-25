@@ -67,7 +67,7 @@
   <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 
   <script type="text/babel" data-presets="react">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     // ─── Persistent storage: localStorage → in-memory fallback ───
     const memStore = {};
@@ -91,6 +91,43 @@
         if (hasLocalStorage) { window.localStorage.setItem(key, val); return; }
         memStore[key] = val;
       } catch (e) { memStore[key] = val; }
+    }
+
+    // ─── Cloud sync (via Cloudflare Worker → GitHub data.json) ───
+    // The Worker holds the GitHub token server-side (never in this page). SYNC_KEY is a
+    // low-security speed-bump only — it lets the Worker reject drive-by writes, but since
+    // it ships in this public file it is NOT real auth. Worst case if leaked: someone could
+    // overwrite THIS calculator's data.json (recoverable from git history). No token, and
+    // no access to any other repo, is exposed here.
+    const SYNC_URL = "https://pistachio-calc-sync.pistachiossweet.workers.dev/"; // set to your deployed Worker
+    const SYNC_KEY = "psweet-calc-key-2026";
+    const SYNC_ENABLED = /^https:\/\/.+\.workers\.dev\/?$/.test(SYNC_URL);
+    let _syncTimer = null;
+
+    async function cloudLoad() {
+      if (SYNC_ENABLED) {
+        try {
+          const r = await fetch(SYNC_URL, { headers: { "x-app-key": SYNC_KEY }, cache: "no-store" });
+          if (r.ok) { const j = await r.json(); if (j && Array.isArray(j.materials)) return j; }
+        } catch (e) {}
+      }
+      // public raw fallback (no auth, ~CDN cached)
+      try {
+        const r = await fetch("https://raw.githubusercontent.com/pistachios-swwets/pistachio-calculator/main/data.json?t=" + Date.now());
+        if (r.ok) { const j = await r.json(); if (j && Array.isArray(j.materials)) return j; }
+      } catch (e) {}
+      return null;
+    }
+    async function cloudSave(data) {
+      if (!SYNC_ENABLED) return false;
+      try {
+        const r = await fetch(SYNC_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-app-key": SYNC_KEY },
+          body: JSON.stringify(data),
+        });
+        return r.ok;
+      } catch (e) { return false; }
     }
 
     // ─── Formatting helpers ───
@@ -194,21 +231,58 @@
       const [repRange, setRepRange] = useState("today");
       const [repFrom, setRepFrom] = useState("");
       const [repTo, setRepTo] = useState("");
+      const [syncState, setSyncState] = useState(""); // '' | 'pending' | 'saving' | 'saved' | 'offline'
+      const skipSync = useRef(true); // don't sync the initial loaded data back up
 
       useEffect(() => {
         (async () => {
-          const m = await load("costcalc_materials", INIT_MATERIALS);
-          const p = await load("costcalc_packaging", INIT_PACKAGING);
-          const r = await load("costcalc_recipes", []);
-          const sl = await load("costcalc_sales", []);
-          setMaterials(m); setPackaging(p); setRecipes(r); setSales(sl); setReady(true);
+          // Local cache (per-key) + cloud (single data.json). Pick the "richer" set
+          // (more recipes+sales) so migrating an in-use device to the cloud never loses data.
+          const localData = {
+            materials: await load("costcalc_materials", null),
+            packaging: await load("costcalc_packaging", null),
+            recipes: await load("costcalc_recipes", null),
+            sales: await load("costcalc_sales", null),
+          };
+          const hasLocal = localData.materials !== null || localData.recipes !== null;
+          const cloud = await cloudLoad();
+          const score = (d) => d ? (((d.recipes || []).length) + ((d.sales || []).length)) : -1;
+          let chosen = null, pushUp = false;
+          if (cloud && hasLocal) {
+            if (score(localData) > score(cloud)) { chosen = localData; pushUp = true; }
+            else chosen = cloud;
+          } else if (cloud) { chosen = cloud; }
+          else if (hasLocal) { chosen = localData; pushUp = true; }
+
+          const m = (chosen && chosen.materials) || INIT_MATERIALS;
+          const p = (chosen && chosen.packaging) || INIT_PACKAGING;
+          const r = (chosen && chosen.recipes) || [];
+          const sl = (chosen && chosen.sales) || [];
+          setMaterials(m); setPackaging(p); setRecipes(r); setSales(sl);
+          try { save("costcalc_materials", m); save("costcalc_packaging", p); save("costcalc_recipes", r); save("costcalc_sales", sl); } catch (e) {}
+          setReady(true);
+          if (pushUp && SYNC_ENABLED) { setSyncState("saving"); cloudSave({ materials: m, packaging: p, recipes: r, sales: sl }).then(ok => setSyncState(ok ? "saved" : "offline")); }
         })();
       }, []);
 
+      // Fast local cache on every change
       useEffect(() => { if (ready && materials) save("costcalc_materials", materials); }, [materials, ready]);
       useEffect(() => { if (ready && packaging) save("costcalc_packaging", packaging); }, [packaging, ready]);
       useEffect(() => { if (ready && recipes) save("costcalc_recipes", recipes); }, [recipes, ready]);
       useEffect(() => { if (ready && sales) save("costcalc_sales", sales); }, [sales, ready]);
+
+      // Debounced cloud sync (3s after the last change), skipping the initial load.
+      useEffect(() => {
+        if (!ready || !SYNC_ENABLED) return;
+        if (skipSync.current) { skipSync.current = false; return; }
+        if (_syncTimer) clearTimeout(_syncTimer);
+        setSyncState("pending");
+        _syncTimer = setTimeout(async () => {
+          setSyncState("saving");
+          const ok = await cloudSave({ materials, packaging, recipes, sales });
+          setSyncState(ok ? "saved" : "offline");
+        }, 3000);
+      }, [materials, packaging, recipes, sales, ready]);
 
       if (!ready || !materials || !packaging || !recipes || !sales) {
         return <div style={{ fontFamily: "system-ui", padding: 40, textAlign: "center", color: C.muted, direction: "rtl" }}>جاري التحميل...</div>;
@@ -533,6 +607,12 @@
                 style={{ position: "absolute", top: 10, left: 0, background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer", minHeight: "auto" }}>
                 خروج ⏻
               </button>
+              {SYNC_ENABLED && syncState && (
+                <div title="مزامنة سحابية" style={{ position: "absolute", top: 10, right: 0, fontSize: 11,
+                  color: syncState === "saved" ? C.pri : syncState === "offline" ? C.danger : C.muted }}>
+                  {syncState === "saved" ? "☁️ محفوظ" : syncState === "offline" ? "⚠️ غير متصل" : "⏳ يحفظ…"}
+                </div>
+              )}
             </div>
 
             {/* Tabs */}
