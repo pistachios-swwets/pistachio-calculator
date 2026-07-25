@@ -189,6 +189,20 @@
   ],
   "sales": [
     {
+      "id": "ms0kd8nuvg3ov",
+      "recipeId": "mrz6n68dqxo0j",
+      "recipeName": "بالحليب الطبيعي 500 مل",
+      "quantity": 1,
+      "unitPrice": 1.4012499999999999,
+      "totalPrice": 1.4012499999999999,
+      "costPerUnit": 0.475,
+      "totalCost": 0.475,
+      "profit": 0.9262499999999999,
+      "paymentMethod": "benefitpay",
+      "customerName": "",
+      "date": "2026-07-25T16:08:45.594Z"
+    },
+    {
       "id": "ms0kbyw5me9el",
       "recipeId": "mrz6hxpldauyj",
       "recipeName": "بالحليب الطبيعي 200 مل",
