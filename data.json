@@ -189,6 +189,20 @@
   ],
   "sales": [
     {
+      "id": "ms0xcv75nhlo9",
+      "recipeId": "mrz6n68dqxo0j",
+      "recipeName": "بالحليب الطبيعي 500 مل",
+      "quantity": 3,
+      "unitPrice": 1.4012499999999999,
+      "totalPrice": 4.203749999999999,
+      "costPerUnit": 0.475,
+      "totalCost": 1.4249999999999998,
+      "profit": 2.7787499999999996,
+      "paymentMethod": "benefitpay",
+      "customerName": "Draz",
+      "date": "2026-07-25T22:12:23.153Z"
+    },
+    {
       "id": "ms0xbjcep5jbg",
       "recipeId": "mrz6hxpldauyj",
       "recipeName": "بالحليب الطبيعي 200 مل",
