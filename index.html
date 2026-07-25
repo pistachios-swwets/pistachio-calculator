@@ -10,6 +10,7 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
+    @keyframes cc-toast { from { opacity: 0; } to { opacity: 1; } }
     body { font-family: 'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif; background: #f7f5f0; }
     /* Touch-friendly minimum hit targets */
     button, .cc-touch { min-height: 44px; }
@@ -180,23 +181,36 @@
       const [pkgName, setPkgName] = useState("");
       const [pkgCost, setPkgCost] = useState("");
 
-      // Delete confirmation modal: { type: 'material'|'packaging'|'recipe', id, name, password, error }
+      // Delete confirmation modal: { type: 'material'|'packaging'|'recipe'|'sale', id, name, password, error }
       const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+      // Mini POS + reports
+      const [sales, setSales] = useState(null);
+      const [toast, setToast] = useState("");
+      const [posRecipeId, setPosRecipeId] = useState("");
+      const [posQty, setPosQty] = useState(1);
+      const [posPay, setPosPay] = useState("cash");
+      const [posCustomer, setPosCustomer] = useState("");
+      const [repRange, setRepRange] = useState("today");
+      const [repFrom, setRepFrom] = useState("");
+      const [repTo, setRepTo] = useState("");
 
       useEffect(() => {
         (async () => {
           const m = await load("costcalc_materials", INIT_MATERIALS);
           const p = await load("costcalc_packaging", INIT_PACKAGING);
           const r = await load("costcalc_recipes", []);
-          setMaterials(m); setPackaging(p); setRecipes(r); setReady(true);
+          const sl = await load("costcalc_sales", []);
+          setMaterials(m); setPackaging(p); setRecipes(r); setSales(sl); setReady(true);
         })();
       }, []);
 
       useEffect(() => { if (ready && materials) save("costcalc_materials", materials); }, [materials, ready]);
       useEffect(() => { if (ready && packaging) save("costcalc_packaging", packaging); }, [packaging, ready]);
       useEffect(() => { if (ready && recipes) save("costcalc_recipes", recipes); }, [recipes, ready]);
+      useEffect(() => { if (ready && sales) save("costcalc_sales", sales); }, [sales, ready]);
 
-      if (!ready || !materials || !packaging || !recipes) {
+      if (!ready || !materials || !packaging || !recipes || !sales) {
         return <div style={{ fontFamily: "system-ui", padding: 40, textAlign: "center", color: C.muted, direction: "rtl" }}>جاري التحميل...</div>;
       }
 
@@ -360,7 +374,97 @@
         if (type === "material") setMaterials(p => p.filter(x => x.id !== id));
         else if (type === "packaging") setPackaging(p => p.filter(x => x.id !== id));
         else if (type === "recipe") setRecipes(p => p.filter(x => x.id !== id));
+        else if (type === "sale") setSales(p => p.filter(x => x.id !== id));
         setDeleteConfirm(null);
+      };
+
+      // ─── Mini POS + reports ───
+      const PAY = {
+        cash: { label: "💵 نقد", short: "💵 نقد", color: "#4a7c2f" },
+        bank: { label: "🏦 تحويل بنكي", short: "🏦 تحويل", color: "#2563eb" },
+        benefitpay: { label: "📱 BenefitPay", short: "📱 BenefitPay", color: "#7c3aed" },
+      };
+      const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+      const localDay = (d) => { const x = d ? new Date(d) : new Date(); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
+      const dayOffset = (n) => { const x = new Date(); x.setDate(x.getDate() + n); return localDay(x); };
+      const fmtDateTime = (iso) => { try { return new Date(iso).toLocaleString("ar-BH", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return String(iso); } };
+
+      const recordSale = () => {
+        const rec = recipes.find(r => r.id === posRecipeId);
+        if (!rec) { showToast("اختر وصفة أولاً"); return; }
+        const q = Math.max(1, parseFloat(posQty) || 1);
+        const unitPrice = parseFloat(rec.sellPrice) || 0;
+        const cpu = parseFloat(rec.costPerUnit) || 0;
+        const sale = {
+          id: uid(), recipeId: rec.id, recipeName: rec.name,
+          quantity: q, unitPrice, totalPrice: unitPrice * q,
+          costPerUnit: cpu, totalCost: cpu * q, profit: (unitPrice - cpu) * q,
+          paymentMethod: posPay, customerName: (posCustomer || "").trim(),
+          date: new Date().toISOString(),
+        };
+        setSales(prev => [sale, ...prev]);
+        setPosQty(1); setPosCustomer("");
+        showToast("تم تسجيل البيع ✅");
+      };
+
+      const exportSalesPDF = (list, periodLabel) => {
+        const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+        const tSales = list.reduce((s, x) => s + (x.totalPrice || 0), 0);
+        const tProfit = list.reduce((s, x) => s + (x.profit || 0), 0);
+        const margin = tSales > 0 ? tProfit / tSales * 100 : 0;
+        const bp = Object.values(list.reduce((acc, x) => { const k = x.recipeId || x.recipeName; if (!acc[k]) acc[k] = { name: x.recipeName, qty: 0, sales: 0, profit: 0 }; acc[k].qty += x.quantity || 0; acc[k].sales += x.totalPrice || 0; acc[k].profit += x.profit || 0; return acc; }, {})).sort((a, b) => b.sales - a.sales);
+        const bpRows = bp.length ? bp.map(p => `<tr><td>${esc(p.name)}</td><td class="c">${fmt(p.qty)}</td><td class="c">${fmt(p.sales)} BD</td><td class="c">${fmt(p.profit)} BD</td><td class="c">${fmtPct(p.sales > 0 ? p.profit / p.sales * 100 : 0)}</td></tr>`).join("") : `<tr><td colspan="5" class="c muted">لا مبيعات</td></tr>`;
+        const pm = ["cash", "bank", "benefitpay"].map(k => { const r = list.filter(x => x.paymentMethod === k); return { label: PAY[k].short, s: r.reduce((a, x) => a + (x.totalPrice || 0), 0), n: r.length }; });
+        const pmRows = pm.map(p => `<tr><td>${esc(p.label)}</td><td class="c">${p.n}</td><td class="c">${fmt(p.s)} BD</td></tr>`).join("");
+        const hist = list.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+        const histRows = hist.length ? hist.map(x => `<tr><td>${esc(fmtDateTime(x.date))}</td><td>${esc(x.recipeName)}</td><td class="c">${fmt(x.quantity)}</td><td class="c">${fmt(x.totalPrice)} BD</td><td class="c">${esc((PAY[x.paymentMethod] || PAY.cash).short)}</td><td>${esc(x.customerName || "—")}</td></tr>`).join("") : `<tr><td colspan="6" class="c muted">لا مبيعات</td></tr>`;
+        const exportedOn = new Date().toLocaleString("ar-BH");
+        const html =
+          '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">' +
+          '<title>تقرير المبيعات — Pistachio Sweets</title>' +
+          '<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">' +
+          '<style>' +
+          '@page { size: A4; margin: 12mm; }' +
+          '* { box-sizing: border-box; }' +
+          "body { font-family: 'IBM Plex Sans Arabic','Segoe UI',Tahoma,sans-serif; direction: rtl; color:#2c2c2a; margin:0; padding:20px; }" +
+          '.brand { background:#4a7c2f; color:#fff; text-align:center; padding:14px; border-radius:10px; }' +
+          '.brand h1 { margin:0; font-size:18px; }' +
+          '.brand div { font-size:12px; opacity:.9; margin-top:3px; }' +
+          '.period { font-size:13px; color:#6b7280; margin:14px 0 10px; font-weight:600; }' +
+          '.cards { display:flex; gap:10px; margin-bottom:14px; }' +
+          '.card { flex:1; border:1px solid #e2e0db; border-radius:10px; padding:12px; text-align:center; }' +
+          '.card .l { font-size:11px; color:#6b7280; }' +
+          '.card .v { font-size:17px; font-weight:700; color:#4a7c2f; margin-top:3px; }' +
+          '.sec { font-size:14px; font-weight:700; color:#4a7c2f; border-bottom:2px solid #e8f0e2; padding-bottom:4px; margin:16px 0 8px; }' +
+          'table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px; }' +
+          'th,td { border:1px solid #d7d7d2; padding:6px 8px; text-align:right; }' +
+          'th { background:#e8f0e2; font-weight:600; }' +
+          'td.c { text-align:center; }' +
+          '.muted { color:#6b7280; }' +
+          '.foot { margin-top:20px; border-top:1px solid #e2e0db; padding-top:8px; font-size:11px; color:#6b7280; display:flex; justify-content:space-between; }' +
+          '@media print { body { padding:0; } }' +
+          '</style></head><body>' +
+          '<div class="brand"><h1>تقرير المبيعات</h1><div>Pistachio Sweets — Sales Report</div></div>' +
+          '<div class="period">الفترة: ' + esc(periodLabel) + '</div>' +
+          '<div class="cards">' +
+          '<div class="card"><div class="l">إجمالي المبيعات</div><div class="v">' + fmt(tSales) + ' BD</div></div>' +
+          '<div class="card"><div class="l">إجمالي الربح</div><div class="v" style="color:#c4842d">' + fmt(tProfit) + ' BD</div></div>' +
+          '<div class="card"><div class="l">عدد المبيعات</div><div class="v" style="color:#4338ca">' + list.length + '</div></div>' +
+          '<div class="card"><div class="l">نسبة الربح</div><div class="v">' + fmtPct(margin) + '</div></div>' +
+          '</div>' +
+          '<div class="sec">المبيعات حسب المنتج</div>' +
+          '<table><thead><tr><th>المنتج</th><th class="c">الكمية</th><th class="c">المبيعات</th><th class="c">الربح</th><th class="c">نسبة</th></tr></thead><tbody>' + bpRows + '</tbody></table>' +
+          '<div class="sec">حسب طريقة الدفع</div>' +
+          '<table><thead><tr><th>الطريقة</th><th class="c">عدد</th><th class="c">المبلغ</th></tr></thead><tbody>' + pmRows + '</tbody></table>' +
+          '<div class="sec">سجل المبيعات</div>' +
+          '<table><thead><tr><th>التاريخ</th><th>المنتج</th><th class="c">كمية</th><th class="c">المبلغ</th><th class="c">الدفع</th><th>العميل</th></tr></thead><tbody>' + histRows + '</tbody></table>' +
+          '<div class="foot"><span>Pistachio Sweets</span><span>تاريخ التصدير: ' + esc(exportedOn) + '</span></div>' +
+          '</body></html>';
+        const w = window.open("", "_blank");
+        if (!w) { return; }
+        w.document.open(); w.document.write(html); w.document.close(); w.focus();
+        w.onafterprint = () => { try { w.close(); } catch (e) {} };
+        setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
       };
 
       // ─── Styles ───
@@ -392,7 +496,31 @@
         { k: "mat", l: "🧪 المواد الخام" },
         { k: "pkg", l: "📦 التغليف" },
         { k: "rec", l: `📋 الوصفات (${recipes.length})` },
+        { k: "pos", l: "💰 نقطة البيع" },
+        { k: "rep", l: "📊 التقارير" },
       ];
+
+      // ─── POS / report derived data ───
+      const todayList = sales.filter(s => localDay(s.date) === localDay());
+      const todayTotal = todayList.reduce((a, s) => a + (s.totalPrice || 0), 0);
+      const todayProfit = todayList.reduce((a, s) => a + (s.profit || 0), 0);
+
+      const repFilter = (s) => {
+        const d = localDay(s.date);
+        if (repRange === "today") return d === localDay();
+        if (repRange === "week") return d >= dayOffset(-6) && d <= localDay();
+        if (repRange === "month") return d.slice(0, 7) === localDay().slice(0, 7);
+        if (repRange === "custom") { if (repFrom && d < repFrom) return false; if (repTo && d > repTo) return false; return true; }
+        return true;
+      };
+      const repSales = sales.filter(repFilter).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+      const repTotal = repSales.reduce((a, s) => a + (s.totalPrice || 0), 0);
+      const repProfit = repSales.reduce((a, s) => a + (s.profit || 0), 0);
+      const repMargin = repTotal > 0 ? repProfit / repTotal * 100 : 0;
+      const repByProduct = Object.values(repSales.reduce((acc, s) => { const k = s.recipeId || s.recipeName; if (!acc[k]) acc[k] = { name: s.recipeName, qty: 0, sales: 0, profit: 0 }; acc[k].qty += s.quantity || 0; acc[k].sales += s.totalPrice || 0; acc[k].profit += s.profit || 0; return acc; }, {})).sort((a, b) => b.sales - a.sales);
+      const repByPay = ["cash", "bank", "benefitpay"].map(k => { const r = repSales.filter(s => s.paymentMethod === k); return { k, s: r.reduce((a, x) => a + (x.totalPrice || 0), 0), n: r.length }; });
+      const rangeLabel = repRange === "today" ? "اليوم" : repRange === "week" ? "هذا الأسبوع" : repRange === "month" ? "هذا الشهر" : ((repFrom || "…") + " ← " + (repTo || "…"));
+      const marginColor = repMargin > 20 ? C.pri : repMargin >= 10 ? C.acc : C.danger;
 
       return (
         <div style={sPage}>
@@ -605,6 +733,189 @@
                 ))}
               </div>
             )}
+
+            {/* ═══ Mini POS Tab ═══ */}
+            {tab === "pos" && (
+              <div>
+                <div style={sCard} className="cc-card">
+                  <div style={{ fontWeight: 700, marginBottom: 12, color: C.pri }}>تسجيل بيع</div>
+                  {recipes.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 16, color: C.muted, fontSize: 13 }}>احفظ وصفة أولاً من تبويب الحاسبة</div>
+                  ) : (
+                    <div>
+                      <div style={sGrid(2)} className="cc-grid">
+                        <div>
+                          <label style={sLabel}>الوصفة المحفوظة</label>
+                          <select style={sInput} value={posRecipeId} onChange={e => setPosRecipeId(e.target.value)}>
+                            <option value="">— اختر —</option>
+                            {recipes.map(r => <option key={r.id} value={r.id}>{r.name} — {fmt(r.sellPrice)} BD</option>)}
+                          </select>
+                        </div>
+                        <div><label style={sLabel}>الكمية</label><input style={sInput} type="number" min="1" value={posQty} onChange={e => setPosQty(e.target.value)} /></div>
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <label style={sLabel}>طريقة الدفع</label>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {Object.keys(PAY).map(k => {
+                            const on = posPay === k;
+                            return <button key={k} onClick={() => setPosPay(k)} className="cc-touch" style={{
+                              flex: "1 1 100px", padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                              fontSize: 13, fontWeight: 600, border: `1.5px solid ${PAY[k].color}`,
+                              background: on ? PAY[k].color : "#fff", color: on ? "#fff" : PAY[k].color }}>{PAY[k].label}</button>;
+                          })}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <label style={sLabel}>اسم العميل (اختياري)</label>
+                        <input style={sInput} value={posCustomer} onChange={e => setPosCustomer(e.target.value)} placeholder="اختياري" />
+                      </div>
+                      {posRecipeId && (() => {
+                        const r = recipes.find(x => x.id === posRecipeId);
+                        const q = Math.max(1, parseFloat(posQty) || 1);
+                        return r ? <div style={{ ...sRow, marginTop: 12, borderTop: `1px solid ${C.brd}`, paddingTop: 10 }}>
+                          <span>الإجمالي</span><span style={{ fontWeight: 700, color: C.pri, fontSize: 16 }}>{fmt((parseFloat(r.sellPrice) || 0) * q)} BD</span>
+                        </div> : null;
+                      })()}
+                      <div style={{ marginTop: 14 }}>
+                        <button onClick={recordSale} disabled={!posRecipeId} style={{ ...sBtn("pri"), width: "100%", padding: 14, fontSize: 15, opacity: posRecipeId ? 1 : 0.5 }}>تسجيل البيع</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={sCard} className="cc-card">
+                  <div style={{ fontWeight: 700, marginBottom: 10 }}>مبيعات اليوم</div>
+                  <div style={sGrid(3)} className="cc-grid">
+                    <div style={{ background: C.priLt, borderRadius: 10, padding: 12, textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: C.muted }}>إجمالي المبيعات</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: C.pri }}>{fmt(todayTotal)} BD</div>
+                    </div>
+                    <div style={{ background: C.accLt, borderRadius: 10, padding: 12, textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: C.muted }}>إجمالي الربح</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: C.acc }}>{fmt(todayProfit)} BD</div>
+                    </div>
+                    <div style={{ background: "#eef2ff", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                      <div style={{ fontSize: 11, color: C.muted }}>عدد المبيعات</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "#4338ca" }}>{todayList.length}</div>
+                    </div>
+                  </div>
+                  {todayList.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>آخر المبيعات</div>
+                      {todayList.slice(0, 5).map(s => (
+                        <div key={s.id} style={sRow}>
+                          <span style={{ fontSize: 13 }}>{s.recipeName} × {fmt(s.quantity)}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{fmt(s.totalPrice)} BD <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>{(PAY[s.paymentMethod] || PAY.cash).short}</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Reports Tab ═══ */}
+            {tab === "rep" && (
+              <div>
+                <div style={sCard} className="cc-card">
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                    {[["today", "اليوم"], ["week", "هالأسبوع"], ["month", "هالشهر"]].map(([k, l]) => (
+                      <button key={k} onClick={() => setRepRange(k)} style={{ ...sBtn(repRange === k ? "pri" : "ghost"), flex: "1 1 80px" }}>{l}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 120px" }}><label style={sLabel}>من</label><input style={sInput} type="date" value={repFrom} onChange={e => setRepFrom(e.target.value)} /></div>
+                    <div style={{ flex: "1 1 120px" }}><label style={sLabel}>إلى</label><input style={sInput} type="date" value={repTo} onChange={e => setRepTo(e.target.value)} /></div>
+                    <button style={sBtn("acc")} onClick={() => setRepRange("custom")}>تطبيق</button>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>الفترة: {rangeLabel}</div>
+                </div>
+
+                <div style={sGrid(3)} className="cc-grid">
+                  <div style={{ ...sCard, background: C.priLt, textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: C.muted }}>💰 إجمالي المبيعات</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: C.pri }}>{fmt(repTotal)} BD</div>
+                  </div>
+                  <div style={{ ...sCard, background: C.accLt, textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: C.muted }}>📈 إجمالي الربح</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: C.acc }}>{fmt(repProfit)} BD</div>
+                  </div>
+                  <div style={{ ...sCard, background: "#eef2ff", textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: C.muted }}>🧾 عدد المبيعات</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#4338ca" }}>{repSales.length}</div>
+                  </div>
+                </div>
+
+                <div style={{ ...sCard, display: "flex", justifyContent: "space-between", alignItems: "center" }} className="cc-card">
+                  <span style={{ fontWeight: 600 }}>نسبة الربح للفترة</span>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: marginColor }}>{fmtPct(repMargin)}</span>
+                </div>
+
+                <div style={{ ...sCard, padding: 0 }} className="cc-table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ background: C.priLt }}>
+                      <th style={{ padding: "9px 12px", textAlign: "right" }}>المنتج</th>
+                      <th style={{ padding: "9px 12px", textAlign: "center" }}>الكمية</th>
+                      <th style={{ padding: "9px 12px", textAlign: "center" }}>المبيعات</th>
+                      <th style={{ padding: "9px 12px", textAlign: "center" }}>الربح</th>
+                      <th style={{ padding: "9px 12px", textAlign: "center" }}>نسبة</th>
+                    </tr></thead>
+                    <tbody>{repByProduct.length === 0 ? (
+                      <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: C.muted }}>لا مبيعات في الفترة</td></tr>
+                    ) : repByProduct.map((p, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${C.brd}` }}>
+                        <td style={{ padding: "9px 12px" }}>{p.name}</td>
+                        <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(p.qty)}</td>
+                        <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(p.sales)} BD</td>
+                        <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmt(p.profit)} BD</td>
+                        <td style={{ padding: "9px 12px", textAlign: "center" }}>{fmtPct(p.sales > 0 ? p.profit / p.sales * 100 : 0)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+
+                <div style={sGrid(3)} className="cc-grid">
+                  {repByPay.map(p => (
+                    <div key={p.k} style={{ ...sCard, textAlign: "center", borderTop: `3px solid ${PAY[p.k].color}` }}>
+                      <div style={{ fontSize: 12, color: C.muted }}>{PAY[p.k].short}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: PAY[p.k].color }}>{fmt(p.s)} BD</div>
+                      <div style={{ fontSize: 11, color: C.muted }}>{p.n} عملية</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ textAlign: "center", margin: "4px 0 12px" }}>
+                  <button style={sBtn("acc")} onClick={() => exportSalesPDF(repSales, rangeLabel)}>📄 تصدير PDF</button>
+                </div>
+
+                <div style={{ ...sCard, padding: 0 }} className="cc-table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead><tr style={{ background: C.priLt }}>
+                      <th style={{ padding: "8px 10px", textAlign: "right" }}>التاريخ</th>
+                      <th style={{ padding: "8px 10px", textAlign: "right" }}>المنتج</th>
+                      <th style={{ padding: "8px 10px", textAlign: "center" }}>كمية</th>
+                      <th style={{ padding: "8px 10px", textAlign: "center" }}>المبلغ</th>
+                      <th style={{ padding: "8px 10px", textAlign: "center" }}>الدفع</th>
+                      <th style={{ padding: "8px 10px", textAlign: "right" }}>العميل</th>
+                      <th style={{ width: 34 }}></th>
+                    </tr></thead>
+                    <tbody>{repSales.length === 0 ? (
+                      <tr><td colSpan={7} style={{ textAlign: "center", padding: 20, color: C.muted }}>لا مبيعات</td></tr>
+                    ) : repSales.map(s => (
+                      <tr key={s.id} style={{ borderBottom: `1px solid ${C.brd}` }}>
+                        <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{fmtDateTime(s.date)}</td>
+                        <td style={{ padding: "8px 10px" }}>{s.recipeName}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "center" }}>{fmt(s.quantity)}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "center" }}>{fmt(s.totalPrice)} BD</td>
+                        <td style={{ padding: "8px 10px", textAlign: "center" }}>{(PAY[s.paymentMethod] || PAY.cash).short}</td>
+                        <td style={{ padding: "8px 10px" }}>{s.customerName || "—"}</td>
+                        <td style={{ textAlign: "center" }}><button style={sDelBtn} onClick={() => requestDelete("sale", s.id, s.recipeName)}>✕</button></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ═══ Delete confirmation modal (password-gated) ═══ */}
@@ -639,6 +950,13 @@
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Toast */}
+          {toast && (
+            <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 1100,
+              background: C.pri, color: "#fff", padding: "12px 22px", borderRadius: 999, fontSize: 14, fontWeight: 600,
+              boxShadow: "0 6px 24px rgba(0,0,0,0.25)", animation: "cc-toast 0.25s ease" }}>{toast}</div>
           )}
         </div>
       );
