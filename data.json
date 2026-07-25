@@ -185,29 +185,6 @@
       "totalCost": 0.8150000000000001,
       "costPerUnit": 0.8150000000000001,
       "sellPrice": 2.50205
-    },
-    {
-      "id": "ms0f0ic0jp4py",
-      "name": "بالحليب الطبيعي 200 مل",
-      "ingredients": [
-        {
-          "mid": "mrz19e1hua6j2",
-          "qty": "0.200"
-        }
-      ],
-      "packaging": [
-        {
-          "id": "mrz696456fgpt",
-          "qty": 1
-        }
-      ],
-      "profitPct": 50,
-      "laborCost": 0.15,
-      "units": 1,
-      "savedAt": "٢٥‏/٧‏/٢٠٢٦",
-      "totalCost": 0.33799999999999997,
-      "costPerUnit": 0.33799999999999997,
-      "sellPrice": 0.5069999999999999
     }
   ],
   "sales": []
