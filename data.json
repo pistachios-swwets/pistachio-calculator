@@ -187,5 +187,20 @@
       "sellPrice": 2.50205
     }
   ],
-  "sales": []
+  "sales": [
+    {
+      "id": "ms0hpi4rawj7z",
+      "recipeId": "mrz6hxpldauyj",
+      "recipeName": "بالحليب الطبيعي 200 مل",
+      "quantity": 2,
+      "unitPrice": 0.5069999999999999,
+      "totalPrice": 1.0139999999999998,
+      "costPerUnit": 0.33799999999999997,
+      "totalCost": 0.6759999999999999,
+      "profit": 0.33799999999999986,
+      "paymentMethod": "benefitpay",
+      "customerName": "هشام",
+      "date": "2026-07-25T14:54:18.891Z"
+    }
+  ]
 }
