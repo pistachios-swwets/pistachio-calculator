@@ -102,7 +102,6 @@
     const SYNC_URL = "https://pistachio-calc-sync.pistachiossweet.workers.dev/"; // set to your deployed Worker
     const SYNC_KEY = "psweet-calc-key-2026";
     const SYNC_ENABLED = /^https:\/\/.+\.workers\.dev\/?$/.test(SYNC_URL);
-    let _syncTimer = null;
 
     async function cloudLoad() {
       if (SYNC_ENABLED) {
@@ -231,13 +230,10 @@
       const [repRange, setRepRange] = useState("today");
       const [repFrom, setRepFrom] = useState("");
       const [repTo, setRepTo] = useState("");
-      const [syncState, setSyncState] = useState(""); // '' | 'pending' | 'saving' | 'saved' | 'offline'
-      const skipSync = useRef(true); // don't sync the initial loaded data back up
+      const [syncState, setSyncState] = useState(""); // '' | 'saving' | 'saved' | 'offline'
 
       useEffect(() => {
         (async () => {
-          // Local cache (per-key) + cloud (single data.json). Pick the "richer" set
-          // (more recipes+sales) so migrating an in-use device to the cloud never loses data.
           const localData = {
             materials: await load("costcalc_materials", null),
             packaging: await load("costcalc_packaging", null),
@@ -246,12 +242,11 @@
           };
           const hasLocal = localData.materials !== null || localData.recipes !== null;
           const cloud = await cloudLoad();
-          const score = (d) => d ? (((d.recipes || []).length) + ((d.sales || []).length)) : -1;
+          // Cloud is the SOURCE OF TRUTH: whenever it's reachable, use it — so deletions and
+          // edits made on any device win and never come back. Fall back to local only when
+          // the cloud is unreachable (offline); then push local up so it becomes the baseline.
           let chosen = null, pushUp = false;
-          if (cloud && hasLocal) {
-            if (score(localData) > score(cloud)) { chosen = localData; pushUp = true; }
-            else chosen = cloud;
-          } else if (cloud) { chosen = cloud; }
+          if (cloud && Array.isArray(cloud.materials)) { chosen = cloud; }
           else if (hasLocal) { chosen = localData; pushUp = true; }
 
           const m = (chosen && chosen.materials) || INIT_MATERIALS;
@@ -265,24 +260,21 @@
         })();
       }, []);
 
-      // Fast local cache on every change
+      // Fast local cache on every change (offline fallback)
       useEffect(() => { if (ready && materials) save("costcalc_materials", materials); }, [materials, ready]);
       useEffect(() => { if (ready && packaging) save("costcalc_packaging", packaging); }, [packaging, ready]);
       useEffect(() => { if (ready && recipes) save("costcalc_recipes", recipes); }, [recipes, ready]);
       useEffect(() => { if (ready && sales) save("costcalc_sales", sales); }, [sales, ready]);
 
-      // Debounced cloud sync (3s after the last change), skipping the initial load.
-      useEffect(() => {
-        if (!ready || !SYNC_ENABLED) return;
-        if (skipSync.current) { skipSync.current = false; return; }
-        if (_syncTimer) clearTimeout(_syncTimer);
-        setSyncState("pending");
-        _syncTimer = setTimeout(async () => {
-          setSyncState("saving");
-          const ok = await cloudSave({ materials, packaging, recipes, sales });
-          setSyncState(ok ? "saved" : "offline");
-        }, 3000);
-      }, [materials, packaging, recipes, sales, ready]);
+      // Immediate cloud write of an explicit snapshot — called right after every add / delete /
+      // record so the change (especially deletions) hits data.json at once, NOT on a debounce.
+      // `override` carries the just-mutated array; the other three come from current state.
+      const syncNow = (override) => {
+        if (!SYNC_ENABLED) return;
+        const data = { materials, packaging, recipes, sales, ...override };
+        setSyncState("saving");
+        cloudSave(data).then(ok => setSyncState(ok ? "saved" : "offline"));
+      };
 
       if (!ready || !materials || !packaging || !recipes || !sales) {
         return <div style={{ fontFamily: "system-ui", padding: 40, textAlign: "center", color: C.muted, direction: "rtl" }}>جاري التحميل...</div>;
@@ -308,13 +300,17 @@
       // ─── Actions ───
       const addMaterial = () => {
         if (!matName.trim()) return;
-        setMaterials(prev => [...prev, { id: uid(), name: matName.trim(), unit: matUnit.trim() || "وحدة", costPerUnit: parseFloat(matCost) || 0 }]);
+        const next = [...materials, { id: uid(), name: matName.trim(), unit: matUnit.trim() || "وحدة", costPerUnit: parseFloat(matCost) || 0 }];
+        setMaterials(next);
         setMatName(""); setMatUnit(""); setMatCost("");
+        syncNow({ materials: next });
       };
       const addPkg = () => {
         if (!pkgName.trim()) return;
-        setPackaging(prev => [...prev, { id: uid(), name: pkgName.trim(), cost: parseFloat(pkgCost) || 0 }]);
+        const next = [...packaging, { id: uid(), name: pkgName.trim(), cost: parseFloat(pkgCost) || 0 }];
+        setPackaging(next);
         setPkgName(""); setPkgCost("");
+        syncNow({ packaging: next });
       };
       const addIngredient = () => {
         if (materials.length === 0) return;
@@ -331,7 +327,9 @@
           savedAt: new Date().toLocaleDateString("ar-BH"),
           totalCost, costPerUnit, sellPrice,
         };
-        setRecipes(prev => [...prev, r]);
+        const next = [...recipes, r];
+        setRecipes(next);
+        syncNow({ recipes: next });
       };
       const loadRecipe = (r) => {
         setRecipeName(r.name); setIngredients(r.ingredients || []); setSelPkg(r.packaging || []);
@@ -445,10 +443,12 @@
           return;
         }
         const { type, id } = deleteConfirm;
-        if (type === "material") setMaterials(p => p.filter(x => x.id !== id));
-        else if (type === "packaging") setPackaging(p => p.filter(x => x.id !== id));
-        else if (type === "recipe") setRecipes(p => p.filter(x => x.id !== id));
-        else if (type === "sale") setSales(p => p.filter(x => x.id !== id));
+        // Compute the post-delete array, update state, AND push it to the cloud immediately
+        // so the deletion can't be resurrected by a cloud-wins load before a debounce fires.
+        if (type === "material") { const next = materials.filter(x => x.id !== id); setMaterials(next); syncNow({ materials: next }); }
+        else if (type === "packaging") { const next = packaging.filter(x => x.id !== id); setPackaging(next); syncNow({ packaging: next }); }
+        else if (type === "recipe") { const next = recipes.filter(x => x.id !== id); setRecipes(next); syncNow({ recipes: next }); }
+        else if (type === "sale") { const next = sales.filter(x => x.id !== id); setSales(next); syncNow({ sales: next }); }
         setDeleteConfirm(null);
       };
 
@@ -476,9 +476,11 @@
           paymentMethod: posPay, customerName: (posCustomer || "").trim(),
           date: new Date().toISOString(),
         };
-        setSales(prev => [sale, ...prev]);
+        const next = [sale, ...sales];
+        setSales(next);
         setPosQty(1); setPosCustomer("");
         showToast("تم تسجيل البيع ✅");
+        syncNow({ sales: next });
       };
 
       const exportSalesPDF = (list, periodLabel) => {
