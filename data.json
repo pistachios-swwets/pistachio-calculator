@@ -208,6 +208,19 @@
       "totalCost": 0.33799999999999997,
       "costPerUnit": 0.33799999999999997,
       "sellPrice": 0.5069999999999999
+    },
+    {
+      "id": "ms0hgvmjk767a",
+      "name": "TEST-حذف-DELETE-ME",
+      "ingredients": [],
+      "packaging": [],
+      "profitPct": 30,
+      "laborCost": 0,
+      "units": 1,
+      "savedAt": "٢٥‏/٧‏/٢٠٢٦",
+      "totalCost": 0,
+      "costPerUnit": 0,
+      "sellPrice": 0
     }
   ],
   "sales": []
