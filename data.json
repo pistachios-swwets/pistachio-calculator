@@ -189,6 +189,20 @@
   ],
   "sales": [
     {
+      "id": "ms0kbyw5me9el",
+      "recipeId": "mrz6hxpldauyj",
+      "recipeName": "بالحليب الطبيعي 200 مل",
+      "quantity": 8,
+      "unitPrice": 0.5069999999999999,
+      "totalPrice": 4.055999999999999,
+      "costPerUnit": 0.33799999999999997,
+      "totalCost": 2.7039999999999997,
+      "profit": 1.3519999999999994,
+      "paymentMethod": "benefitpay",
+      "customerName": "لدراز",
+      "date": "2026-07-25T16:07:46.277Z"
+    },
+    {
       "id": "ms0hpi4rawj7z",
       "recipeId": "mrz6hxpldauyj",
       "recipeName": "بالحليب الطبيعي 200 مل",
