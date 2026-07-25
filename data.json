@@ -1,17 +1,214 @@
 {
   "materials": [
-    { "id": "m1", "name": "حليب طازج", "unit": "لتر", "costPerUnit": 0.45 },
-    { "id": "m2", "name": "حبوب الكفير", "unit": "غرام", "costPerUnit": 0.015 },
-    { "id": "m3", "name": "سكر", "unit": "غرام", "costPerUnit": 0.001 },
-    { "id": "m4", "name": "فانيلا", "unit": "مل", "costPerUnit": 0.008 }
+    {
+      "id": "mrz19e1hua6j2",
+      "name": "حليب طبيعي",
+      "unit": "لتر",
+      "costPerUnit": 0.5
+    },
+    {
+      "id": "mrz1kaq8m9zc9",
+      "name": "حليب المراعي",
+      "unit": "لتر",
+      "costPerUnit": 0.7
+    }
   ],
   "packaging": [
-    { "id": "p1", "name": "عبوة 200 مل", "cost": 0.025 },
-    { "id": "p2", "name": "عبوة 250 مل", "cost": 0.03 },
-    { "id": "p3", "name": "عبوة 500 مل", "cost": 0.04 },
-    { "id": "p4", "name": "عبوة 1 لتر", "cost": 0.06 },
-    { "id": "p5", "name": "ملصق", "cost": 0.01 }
+    {
+      "id": "mrz643gp8ma27",
+      "name": "عبوة 1 لتر",
+      "cost": 0.15
+    },
+    {
+      "id": "mrz656f26iw87",
+      "name": "ملصق",
+      "cost": 0.015
+    },
+    {
+      "id": "mrz661fs5m9wb",
+      "name": "عبوة 500 مل",
+      "cost": 0.075
+    },
+    {
+      "id": "mrz696456fgpt",
+      "name": "عبوة 200 مل",
+      "cost": 0.088
+    }
   ],
-  "recipes": [],
+  "recipes": [
+    {
+      "id": "mrz6hxpldauyj",
+      "name": "بالحليب الطبيعي 200 مل",
+      "ingredients": [
+        {
+          "mid": "mrz19e1hua6j2",
+          "qty": "0.200"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz696456fgpt",
+          "qty": 1
+        }
+      ],
+      "profitPct": 50,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 0.33799999999999997,
+      "costPerUnit": 0.33799999999999997,
+      "sellPrice": 0.5069999999999999
+    },
+    {
+      "id": "mrz6iw0s0ho2q",
+      "name": "بالحليب المصنع 200 مل",
+      "ingredients": [
+        {
+          "mid": "mrz1kaq8m9zc9",
+          "qty": "0.200"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz696456fgpt",
+          "qty": 1
+        }
+      ],
+      "profitPct": 33,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 0.378,
+      "costPerUnit": 0.378,
+      "sellPrice": 0.50274
+    },
+    {
+      "id": "mrz6n68dqxo0j",
+      "name": "بالحليب الطبيعي 500 مل",
+      "ingredients": [
+        {
+          "mid": "mrz19e1hua6j2",
+          "qty": "0.500"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz661fs5m9wb",
+          "qty": 1
+        }
+      ],
+      "profitPct": 195,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 0.475,
+      "costPerUnit": 0.475,
+      "sellPrice": 1.4012499999999999
+    },
+    {
+      "id": "mrz6puwd69zkw",
+      "name": "بالحليب المصنع 500 مل",
+      "ingredients": [
+        {
+          "mid": "mrz1kaq8m9zc9",
+          "qty": "0.500"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz661fs5m9wb",
+          "qty": 1
+        },
+        {
+          "id": "mrz656f26iw87",
+          "qty": 1
+        }
+      ],
+      "profitPct": 138,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 0.59,
+      "costPerUnit": 0.59,
+      "sellPrice": 1.4042
+    },
+    {
+      "id": "mrz7f67hc7f3c",
+      "name": "بالحليب المصنع لتر",
+      "ingredients": [
+        {
+          "mid": "mrz1kaq8m9zc9",
+          "qty": "1"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz656f26iw87",
+          "qty": 1
+        },
+        {
+          "id": "mrz643gp8ma27",
+          "qty": 1
+        }
+      ],
+      "profitPct": 147,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 1.015,
+      "costPerUnit": 1.015,
+      "sellPrice": 2.5070499999999996
+    },
+    {
+      "id": "mrz7g8dku7lth",
+      "name": "بالحليب الطبيعي لتر",
+      "ingredients": [
+        {
+          "mid": "mrz19e1hua6j2",
+          "qty": "1"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz656f26iw87",
+          "qty": 1
+        },
+        {
+          "id": "mrz643gp8ma27",
+          "qty": 1
+        }
+      ],
+      "profitPct": 207,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٤‏/٧‏/٢٠٢٦",
+      "totalCost": 0.8150000000000001,
+      "costPerUnit": 0.8150000000000001,
+      "sellPrice": 2.50205
+    },
+    {
+      "id": "ms0f0ic0jp4py",
+      "name": "بالحليب الطبيعي 200 مل",
+      "ingredients": [
+        {
+          "mid": "mrz19e1hua6j2",
+          "qty": "0.200"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "mrz696456fgpt",
+          "qty": 1
+        }
+      ],
+      "profitPct": 50,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "٢٥‏/٧‏/٢٠٢٦",
+      "totalCost": 0.33799999999999997,
+      "costPerUnit": 0.33799999999999997,
+      "sellPrice": 0.5069999999999999
+    }
+  ],
   "sales": []
 }
