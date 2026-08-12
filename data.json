@@ -217,6 +217,33 @@
       "totalCost": 0.43999999999999995,
       "costPerUnit": 0.43999999999999995,
       "sellPrice": 0.8359999999999999
+    },
+    {
+      "id": "msqcdaag8tdxo",
+      "name": "بالحليب المصنع 0.350 مل",
+      "ingredients": [
+        {
+          "mid": "mrz1kaq8m9zc9",
+          "qty": "0.350"
+        }
+      ],
+      "packaging": [
+        {
+          "id": "msqbc9ruaxr7r",
+          "qty": 1
+        },
+        {
+          "id": "mrz656f26iw87",
+          "qty": 1
+        }
+      ],
+      "profitPct": 57,
+      "laborCost": 0.15,
+      "units": 1,
+      "savedAt": "١٢‏/٨‏/٢٠٢٦",
+      "totalCost": 0.51,
+      "costPerUnit": 0.51,
+      "sellPrice": 0.8007
     }
   ],
   "sales": [
