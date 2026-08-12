@@ -33,6 +33,11 @@
       "id": "mrz696456fgpt",
       "name": "عبوة 200 مل",
       "cost": 0.088
+    },
+    {
+      "id": "msqbc9ruaxr7r",
+      "name": "عبوة 350 مل",
+      "cost": 0.1
     }
   ],
   "recipes": [
