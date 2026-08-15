@@ -248,6 +248,20 @@
   ],
   "sales": [
     {
+      "id": "msum8874sfjw6",
+      "recipeId": "mrz7g8dku7lth",
+      "recipeName": "بالحليب الطبيعي لتر",
+      "quantity": 6,
+      "unitPrice": 2.50205,
+      "totalPrice": 15.0123,
+      "costPerUnit": 0.8150000000000001,
+      "totalCost": 4.890000000000001,
+      "profit": 10.122300000000001,
+      "paymentMethod": "benefitpay",
+      "customerName": "دراز",
+      "date": "2026-08-15T16:53:56.224Z"
+    },
+    {
       "id": "msulwhepxgg5r",
       "recipeId": "mrz7g8dku7lth",
       "recipeName": "بالحليب الطبيعي لتر",
